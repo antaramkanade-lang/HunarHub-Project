@@ -1,13 +1,14 @@
 /* =========================================================
    HUNARHUB BACKEND SERVER
+   MongoDB + Cloudinary + Express
    ========================================================= */
 
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 const { MongoClient } = require("mongodb");
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const { v2: cloudinary } = require("cloudinary");
 
 
 /* =========================================================
@@ -16,29 +17,29 @@ const fs = require("fs");
 
 const app = express();
 
-const PORT = process.env.PORT || 5000;
+const PORT =
+    process.env.PORT || 5000;
 
 const PROJECT_ROOT =
     path.resolve(__dirname, "..");
 
-const UPLOAD_FOLDER =
-    path.join(__dirname, "uploads");
-
 
 /* =========================================================
-   MONGODB
+   ENVIRONMENT VARIABLES
    ========================================================= */
-
-/*
- * Set your existing MongoDB connection string in the
- * MONGODB_URI environment variable.
- *
- * Do NOT put your database password directly into
- * server.js when submitting/publishing this project.
- */
 
 const MONGODB_URI =
     process.env.MONGODB_URI;
+
+const CLOUDINARY_CLOUD_NAME =
+    process.env.CLOUDINARY_CLOUD_NAME;
+
+const CLOUDINARY_API_KEY =
+    process.env.CLOUDINARY_API_KEY;
+
+const CLOUDINARY_API_SECRET =
+    process.env.CLOUDINARY_API_SECRET;
+
 
 if (!MONGODB_URI) {
 
@@ -47,16 +48,58 @@ if (!MONGODB_URI) {
     );
 
     console.error(
-        "Set your MongoDB connection string before starting the server."
+        "Set MONGODB_URI in your environment variables."
     );
 
     process.exit(1);
 }
 
 
+const cloudinaryConfigured =
+    Boolean(
+        CLOUDINARY_CLOUD_NAME &&
+        CLOUDINARY_API_KEY &&
+        CLOUDINARY_API_SECRET
+    );
+
+
+if (!cloudinaryConfigured) {
+
+    console.warn(
+        "⚠️ Cloudinary environment variables are not fully set."
+    );
+
+    console.warn(
+        "Product image uploads will not work until they are set."
+    );
+
+}
+
+
+/* =========================================================
+   CLOUDINARY CONFIGURATION
+   ========================================================= */
+
+cloudinary.config({
+
+    cloud_name:
+        CLOUDINARY_CLOUD_NAME,
+
+    api_key:
+        CLOUDINARY_API_KEY,
+
+    api_secret:
+        CLOUDINARY_API_SECRET
+
+});
+
+
+/* =========================================================
+   MONGODB
+   ========================================================= */
+
 const client =
     new MongoClient(MONGODB_URI);
-
 
 let db = null;
 
@@ -77,108 +120,49 @@ app.use(
 
 
 /*
- * Serve the main HunarHub website.
- * server.js is inside /backend, so the website
- * files are one folder above it.
- */
+   Serve the complete HunarHub website.
+   server.js is inside /backend,
+   so the main project folder is one level above.
+*/
 
 app.use(
     express.static(PROJECT_ROOT)
 );
 
 
-/*
- * Make uploaded product images available at:
- *
- * http://localhost:5000/uploads/filename.jpg
- */
-
-app.use(
-    "/uploads",
-    express.static(UPLOAD_FOLDER)
-);
-
-
-/* =========================================================
-   UPLOAD FOLDER
-   ========================================================= */
-
-if (!fs.existsSync(UPLOAD_FOLDER)) {
-
-    fs.mkdirSync(
-        UPLOAD_FOLDER,
-        {
-            recursive: true
-        }
-    );
-
-}
-
-
 /* =========================================================
    MULTER IMAGE UPLOAD
    ========================================================= */
 
-const storage =
-    multer.diskStorage({
-
-        destination:
-            function (req, file, cb) {
-
-                cb(
-                    null,
-                    UPLOAD_FOLDER
-                );
-
-            },
-
-
-        filename:
-            function (req, file, cb) {
-
-                const safeName =
-                    file.originalname
-                        .replace(
-                            /[^a-zA-Z0-9._-]/g,
-                            "-"
-                        );
-
-
-                const uniqueName =
-                    Date.now() +
-                    "-" +
-                    safeName;
-
-
-                cb(
-                    null,
-                    uniqueName
-                );
-
-            }
-
-    });
-
+/*
+   Images are kept temporarily in memory
+   and then uploaded directly to Cloudinary.
+*/
 
 const upload =
     multer({
 
-        storage: storage,
+        storage:
+            multer.memoryStorage(),
 
         limits: {
+
             fileSize:
                 5 * 1024 * 1024
+
         },
 
         fileFilter:
             function (req, file, cb) {
 
                 const allowedTypes = [
+
                     "image/jpeg",
                     "image/jpg",
                     "image/png",
                     "image/webp",
                     "image/gif"
+
                 ];
 
 
@@ -212,11 +196,9 @@ const upload =
    INITIAL PRODUCTS
    ========================================================= */
 
-const products = [
+const initialProducts = [
 
     {
-        id: 1,
-
         name:
             "Handmade Terracotta Vase",
 
@@ -233,14 +215,14 @@ const products = [
             "vase.jpg",
 
         description:
-            "A beautiful handmade terracotta vase created by Priya Crafts."
+            "A beautiful handmade terracotta vase created by Priya Crafts.",
 
+        createdAt:
+            new Date()
     },
 
 
     {
-        id: 2,
-
         name:
             "Handmade Necklace",
 
@@ -257,14 +239,14 @@ const products = [
             "necklace.jpg",
 
         description:
-            "A unique handmade necklace designed by Aisha Designs."
+            "A unique handmade necklace designed by Aisha Designs.",
 
+        createdAt:
+            new Date()
     },
 
 
     {
-        id: 3,
-
         name:
             "Hand Painted Artwork",
 
@@ -281,14 +263,14 @@ const products = [
             "artwork.jpg",
 
         description:
-            "Beautiful hand painted artwork created by Art With Riya."
+            "Beautiful hand painted artwork created by Art With Riya.",
 
+        createdAt:
+            new Date()
     },
 
 
     {
-        id: 4,
-
         name:
             "Traditional Handmade Dress",
 
@@ -305,14 +287,14 @@ const products = [
             "dress.jpg",
 
         description:
-            "A traditional handmade dress created by Meera Fashion."
+            "A traditional handmade dress created by Meera Fashion.",
 
+        createdAt:
+            new Date()
     },
 
 
     {
-        id: 5,
-
         name:
             "Homemade Snacks",
 
@@ -329,14 +311,14 @@ const products = [
             "snacks.jpg",
 
         description:
-            "Delicious homemade snacks prepared by Rahul's Kitchen."
+            "Delicious homemade snacks prepared by Rahul's Kitchen.",
 
+        createdAt:
+            new Date()
     },
 
 
     {
-        id: 6,
-
         name:
             "Customized Gift Box",
 
@@ -353,28 +335,37 @@ const products = [
             "gift-box.jpg",
 
         description:
-            "A personalized gift box prepared by Gift Studio."
+            "A personalized gift box prepared by Gift Studio.",
 
+        createdAt:
+            new Date()
     }
 
 ];
 
 
 /* =========================================================
-   HOME / HEALTH CHECK
+   HOME ROUTE
    ========================================================= */
 
 app.get(
     "/",
     function (req, res) {
 
-        res.send(
-            "HunarHub Backend is running!"
+        res.sendFile(
+            path.join(
+                PROJECT_ROOT,
+                "index.html"
+            )
         );
 
     }
 );
 
+
+/* =========================================================
+   HEALTH CHECK
+   ========================================================= */
 
 app.get(
     "/api/health",
@@ -382,7 +373,8 @@ app.get(
 
         res.json({
 
-            success: true,
+            success:
+                true,
 
             message:
                 "HunarHub API is working.",
@@ -390,7 +382,12 @@ app.get(
             database:
                 db
                     ? "connected"
-                    : "not connected"
+                    : "not connected",
+
+            cloudinary:
+                cloudinaryConfigured
+                    ? "configured"
+                    : "not configured"
 
         });
 
@@ -411,6 +408,9 @@ app.get(
             const productsFromDB =
                 await productsCollection
                     .find({})
+                    .sort({
+                        createdAt: 1
+                    })
                     .toArray();
 
 
@@ -463,8 +463,13 @@ app.get(
             const sellerProducts =
                 await productsCollection
                     .find({
+
                         seller:
                             decodedSellerName
+
+                    })
+                    .sort({
+                        createdAt: 1
                     })
                     .toArray();
 
@@ -506,20 +511,32 @@ app.post(
         try {
 
             const {
+
                 businessName,
+
                 sellerSkill,
+
                 sellerCategory,
+
                 businessDescription,
+
                 sellerContact,
+
                 rating
+
             } = req.body;
 
 
             if (
+
                 !businessName ||
+
                 !sellerSkill ||
+
                 !businessDescription ||
+
                 !sellerContact
+
             ) {
 
                 return res.status(400).json({
@@ -650,7 +667,54 @@ app.get(
 
 
 /* =========================================================
-   ADD SELLER PRODUCT + IMAGE
+   CLOUDINARY UPLOAD HELPER
+   ========================================================= */
+
+function uploadToCloudinary(fileBuffer) {
+
+    return new Promise(
+        function (resolve, reject) {
+
+            const stream =
+                cloudinary.uploader.upload_stream(
+
+                    {
+                        folder:
+                            "hunarhub/products",
+
+                        resource_type:
+                            "image"
+                    },
+
+                    function (error, result) {
+
+                        if (error) {
+
+                            reject(error);
+
+                        } else {
+
+                            resolve(result);
+
+                        }
+
+                    }
+
+                );
+
+
+            stream.end(
+                fileBuffer
+            );
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+   ADD SELLER PRODUCT
    ========================================================= */
 
 app.post(
@@ -661,22 +725,38 @@ app.post(
         try {
 
             const {
+
                 name,
+
                 category,
+
                 price,
+
                 description,
-                seller
+
+                seller,
+
+                sellerCategory
+
             } = req.body;
 
 
-            /* Validate text fields */
+            /* -----------------------------------------
+               VALIDATE PRODUCT DETAILS
+               ----------------------------------------- */
 
             if (
+
                 !name ||
+
                 !category ||
+
                 !price ||
+
                 !description ||
+
                 !seller
+
             ) {
 
                 return res.status(400).json({
@@ -689,7 +769,9 @@ app.post(
             }
 
 
-            /* Validate image */
+            /* -----------------------------------------
+               VALIDATE IMAGE
+               ----------------------------------------- */
 
             if (!req.file) {
 
@@ -703,15 +785,22 @@ app.post(
             }
 
 
+            /* -----------------------------------------
+               VALIDATE PRICE
+               ----------------------------------------- */
+
             const numericPrice =
                 Number(price);
 
 
             if (
+
                 Number.isNaN(
                     numericPrice
                 ) ||
+
                 numericPrice <= 0
+
             ) {
 
                 return res.status(400).json({
@@ -723,6 +812,51 @@ app.post(
 
             }
 
+
+            /* -----------------------------------------
+               CHECK CLOUDINARY
+               ----------------------------------------- */
+
+            if (!cloudinaryConfigured) {
+
+                return res.status(500).json({
+
+                    error:
+                        "Cloudinary is not configured on the server."
+
+                });
+
+            }
+
+
+            /* -----------------------------------------
+               UPLOAD IMAGE TO CLOUDINARY
+               ----------------------------------------- */
+
+            const uploadedImage =
+                await uploadToCloudinary(
+                    req.file.buffer
+                );
+
+
+            if (
+
+                !uploadedImage ||
+
+                !uploadedImage.secure_url
+
+            ) {
+
+                throw new Error(
+                    "Cloudinary did not return an image URL."
+                );
+
+            }
+
+
+            /* -----------------------------------------
+               CREATE PRODUCT
+               ----------------------------------------- */
 
             const newProduct = {
 
@@ -741,15 +875,26 @@ app.post(
                 seller:
                     seller.trim(),
 
+                sellerCategory:
+                    sellerCategory
+                        ? sellerCategory.trim()
+                        : category.trim(),
+
                 image:
-                    "/uploads/" +
-                    req.file.filename,
+                    uploadedImage.secure_url,
+
+                cloudinaryPublicId:
+                    uploadedImage.public_id,
 
                 createdAt:
                     new Date()
 
             };
 
+
+            /* -----------------------------------------
+               SAVE PRODUCT TO MONGODB
+               ----------------------------------------- */
 
             const result =
                 await productsCollection
@@ -758,7 +903,11 @@ app.post(
                     );
 
 
-            res.json({
+            /* -----------------------------------------
+               RESPONSE
+               ----------------------------------------- */
+
+            res.status(201).json({
 
                 message:
                     "Product added successfully!",
@@ -781,34 +930,6 @@ app.post(
                 "Error adding product:",
                 error
             );
-
-
-            /* Remove uploaded file if DB insert fails */
-
-            if (
-                req.file &&
-                req.file.path &&
-                fs.existsSync(
-                    req.file.path
-                )
-            ) {
-
-                try {
-
-                    fs.unlinkSync(
-                        req.file.path
-                    );
-
-                } catch (deleteError) {
-
-                    console.error(
-                        "Could not delete failed upload:",
-                        deleteError
-                    );
-
-                }
-
-            }
 
 
             res.status(500).json({
@@ -860,7 +981,7 @@ app.get(
             const result =
                 await productsCollection
                     .insertMany(
-                        products
+                        initialProducts
                     );
 
 
@@ -980,11 +1101,15 @@ async function startServer() {
 
 
         db =
-            client.db("HunarHub");
+            client.db(
+                "HunarHub"
+            );
 
 
         productsCollection =
-            db.collection("products");
+            db.collection(
+                "products"
+            );
 
 
         console.log(
@@ -993,7 +1118,11 @@ async function startServer() {
 
 
         app.listen(
+
             PORT,
+
+            "0.0.0.0",
+
             function () {
 
                 console.log(
@@ -1008,7 +1137,12 @@ async function startServer() {
                     `✅ API sellers: http://localhost:${PORT}/api/sellers`
                 );
 
+                console.log(
+                    `✅ API health: http://localhost:${PORT}/api/health`
+                );
+
             }
+
         );
 
 
